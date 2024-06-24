@@ -92,6 +92,8 @@ class Globals:
                 return None
             case NumericType(kind):
                 match kind:
+                    case NumericType.Kind.Bool:
+                        type_defn = bool_type_def
                     case NumericType.Kind.Int:
                         type_defn = int_type_def
                     case NumericType.Kind.Float:

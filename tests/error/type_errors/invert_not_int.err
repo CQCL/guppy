@@ -2,6 +2,6 @@ Guppy compilation failed. Error in file $FILE:6
 
 4:    @compile_guppy
 5:    def foo() -> int:
-6:        return ~True
-                  ^^^^
-GuppyTypeError: Unary operator `~` not defined for argument of type  `bool`
+6:        return ~()
+                  ^^
+GuppyTypeError: Unary operator `~` not defined for argument of type  `()`

@@ -5,7 +5,12 @@ from pydantic import BaseModel
 
 from guppylang.ast_util import AstNode, get_type, with_loc
 from guppylang.checker.core import Context
-from guppylang.checker.expr_checker import ExprSynthesizer, check_num_args
+from guppylang.checker.expr_checker import (
+    ExprSynthesizer,
+    check_call,
+    check_num_args,
+    synthesize_call,
+)
 from guppylang.definition.custom import (
     CustomCallChecker,
     CustomCallCompiler,
@@ -16,7 +21,7 @@ from guppylang.definition.value import CallableDef
 from guppylang.error import GuppyError, GuppyTypeError
 from guppylang.hugr_builder.hugr import UNDEFINED, OutPortV
 from guppylang.nodes import GlobalCall
-from guppylang.tys.builtin import bool_type, list_type
+from guppylang.tys.builtin import bool_type, int_type, list_type
 from guppylang.tys.subst import Subst
 from guppylang.tys.ty import FunctionType, NumericType, Type, unify
 
@@ -239,6 +244,38 @@ class CallableChecker(CustomCallChecker):
                 f"Expected expression of type `{ty}`, got `bool`", self.node
             )
         return args, subst
+
+
+class BoolArithChecker(DefaultCallChecker):
+    """Function call checker for arithmetic operations on bools.
+
+    Converts all bools into ints and calls the corresponding int arithmetic method with
+    the same name.
+    """
+
+    def _prepare_args(self, args: list[ast.expr]) -> list[ast.expr]:
+        # Cast all inputs to int
+        to_int = self.ctx.globals.get_instance_func(bool_type(), "__int__")
+        assert to_int is not None
+        return [to_int.synthesize_call([arg], arg, self.ctx)[0] for arg in args]
+
+    def _get_func(self) -> CallableDef:
+        # Get the int function with the same name
+        func = self.ctx.globals.get_instance_func(int_type(), self.func.name)
+        assert func is not None
+        return func
+
+    def synthesize(self, args: list[ast.expr]) -> tuple[ast.expr, Type]:
+        args, _, inst = synthesize_call(self.func.ty, args, self.node, self.ctx)
+        assert not inst  # `self.func.ty` is not generic
+        args = self._prepare_args(args)
+        return self._get_func().synthesize_call(args, self.node, self.ctx)
+
+    def check(self, args: list[ast.expr], ty: Type) -> tuple[ast.expr, Subst]:
+        args, _, inst = check_call(self.func.ty, args, ty, self.node, self.ctx)
+        assert not inst  # `self.func.ty` is not generic
+        args = self._prepare_args(args)
+        return self._get_func().check_call(args, ty, self.node, self.ctx)
 
 
 class IntTruedivCompiler(CustomCallCompiler):

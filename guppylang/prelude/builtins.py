@@ -12,6 +12,7 @@ from guppylang.error import GuppyError
 from guppylang.hugr_builder.hugr import DummyOp
 from guppylang.module import GuppyModule
 from guppylang.prelude._internal import (
+    BoolArithChecker,
     CallableChecker,
     CoercingChecker,
     DunderChecker,
@@ -52,20 +53,145 @@ def py(*_args: Any) -> Any:
 
 @guppy.extend_type(builtins, bool_type_def)
 class Bool:
+    @guppy.custom(builtins, NoopCompiler())
+    def __abs__(self: int) -> int: ...
+
+    @guppy.custom(builtins, checker=BoolArithChecker())
+    def __add__(self: bool, other: bool) -> int: ...
+
     @guppy.hugr_op(builtins, logic_op("And", [tys.TypeArg(tys.BoundedNatArg(n=2))]))
     def __and__(self: bool, other: bool) -> bool: ...
 
     @guppy.custom(builtins, NoopCompiler())
     def __bool__(self: bool) -> bool: ...
 
-    @guppy.hugr_op(builtins, int_op("ifrombool"))
+    @guppy.custom(builtins, checker=BoolArithChecker())
+    def __ceil__(self: bool) -> int: ...
+
+    @guppy.custom(builtins, checker=BoolArithChecker())
+    def __divmod__(self: bool, other: bool) -> tuple[int, int]: ...
+
+    @guppy.custom(builtins, checker=BoolArithChecker())
+    def __eq__(self: bool, other: bool) -> bool: ...
+
+    @guppy.custom(builtins, checker=BoolArithChecker())
+    def __float__(self: bool) -> float: ...
+
+    @guppy.custom(builtins, checker=BoolArithChecker())
+    def __floor__(self: bool) -> int: ...
+
+    @guppy.custom(builtins, checker=BoolArithChecker())
+    def __floordiv__(self: bool, other: bool) -> int: ...
+
+    @guppy.custom(builtins, checker=BoolArithChecker())
+    def __ge__(self: bool, other: bool) -> bool: ...
+
+    @guppy.custom(builtins, checker=BoolArithChecker())
+    def __gt__(self: bool, other: bool) -> bool: ...
+
+    @guppy.hugr_op(builtins, DummyOp("ifrombool"))  # TODO: Widen to INT_WIDTH
     def __int__(self: bool) -> int: ...
+
+    @guppy.custom(builtins, checker=BoolArithChecker())
+    def __invert__(self: bool) -> int: ...
+
+    @guppy.custom(builtins, checker=BoolArithChecker())
+    def __le__(self: bool, other: bool) -> bool: ...
+
+    @guppy.custom(builtins, checker=BoolArithChecker())
+    def __lshift__(self: bool, other: bool) -> int: ...
+
+    @guppy.custom(builtins, checker=BoolArithChecker())
+    def __lt__(self: bool, other: bool) -> bool: ...
+
+    @guppy.custom(builtins, checker=BoolArithChecker())
+    def __mod__(self: bool, other: bool) -> bool: ...
+
+    @guppy.custom(builtins, checker=BoolArithChecker())
+    def __mul__(self: bool, other: bool) -> bool: ...
+
+    @guppy.custom(builtins, checker=BoolArithChecker())
+    def __ne__(self: bool, other: bool) -> bool: ...
+
+    @guppy.custom(builtins, checker=BoolArithChecker())
+    def __neg__(self: bool) -> int: ...
 
     @guppy.custom(builtins, checker=DunderChecker("__bool__"), higher_order_value=False)
     def __new__(x): ...
 
     @guppy.hugr_op(builtins, logic_op("Or", [tys.TypeArg(tys.BoundedNatArg(n=2))]))
     def __or__(self: bool, other: bool) -> bool: ...
+
+    @guppy.custom(builtins, checker=BoolArithChecker())
+    def __pos__(self: bool) -> int: ...
+
+    @guppy.custom(builtins, checker=BoolArithChecker())
+    def __pow__(self: bool, other: bool) -> int: ...
+
+    @guppy.custom(builtins, checker=BoolArithChecker())
+    def __radd__(self: bool, other: bool) -> int: ...
+
+    @guppy.hugr_op(
+        builtins,
+        logic_op("And", [tys.TypeArg(tys.BoundedNatArg(n=2))]),
+        ReversingChecker(),
+    )
+    def __rand__(self: bool, other: bool) -> int: ...
+
+    @guppy.custom(builtins, checker=BoolArithChecker())
+    def __rdivmod__(self: bool, other: bool) -> tuple[int, int]: ...
+
+    @guppy.custom(builtins, checker=BoolArithChecker())
+    def __rfloordiv__(self: bool, other: bool) -> int: ...
+
+    @guppy.custom(builtins, checker=BoolArithChecker())
+    def __rlshift__(self: bool, other: bool) -> int: ...
+
+    @guppy.custom(builtins, checker=BoolArithChecker())
+    def __rmod__(self: bool, other: bool) -> int: ...
+
+    @guppy.custom(builtins, checker=BoolArithChecker())
+    def __rmul__(self: bool, other: bool) -> int: ...
+
+    @guppy.hugr_op(
+        builtins,
+        logic_op("Or", [tys.TypeArg(tys.BoundedNatArg(n=2))]),
+        ReversingChecker(),
+    )
+    def __ror__(self: bool, other: bool) -> int: ...
+
+    @guppy.custom(builtins, checker=BoolArithChecker())
+    def __round__(self: bool) -> int: ...
+
+    @guppy.custom(builtins, checker=BoolArithChecker())
+    def __rpow__(self: bool, other: bool) -> int: ...
+
+    @guppy.custom(builtins, checker=BoolArithChecker())
+    def __rrshift__(self: bool, other: bool) -> int: ...
+
+    @guppy.custom(builtins, checker=BoolArithChecker())
+    def __rshift__(self: bool, other: bool) -> int: ...
+
+    @guppy.custom(builtins, checker=BoolArithChecker())
+    def __rsub__(self: bool, other: bool) -> int: ...
+
+    @guppy.custom(builtins, checker=BoolArithChecker())
+    def __rtruediv__(self: bool, other: bool) -> float: ...
+
+    @guppy.hugr_op(builtins, DummyOp("Xor"), ReversingChecker())  # TODO
+    def __rxor__(self: bool, other: bool) -> bool: ...
+
+    @guppy.custom(builtins, checker=BoolArithChecker())
+    def __sub__(self: bool, other: bool) -> int: ...
+
+    @guppy.custom(builtins, checker=BoolArithChecker())
+    def __truediv__(self: bool, other: bool) -> float: ...
+
+    @guppy.custom(builtins, checker=BoolArithChecker())
+    def __trunc__(self: bool) -> int: ...
+
+    @guppy.hugr_op(builtins, DummyOp("Xor"))  # TODO
+    def __xor__(self: bool, other: bool) -> bool: ...
 
 
 @guppy.extend_type(builtins, int_type_def)

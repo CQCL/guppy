@@ -139,13 +139,8 @@ def _list_to_hugr(args: Sequence[Argument]) -> tys.Type:
 callable_type_def = _CallableTypeDef(DefId.fresh(), None)
 tuple_type_def = _TupleTypeDef(DefId.fresh(), None)
 none_type_def = _NoneTypeDef(DefId.fresh(), None)
-bool_type_def = OpaqueTypeDef(
-    id=DefId.fresh(),
-    name="bool",
-    defined_at=None,
-    params=[],
-    always_linear=False,
-    to_hugr=lambda _: tys.Type(tys.SumType(tys.UnitSum(size=2))),
+bool_type_def = _NumericTypeDef(
+    DefId.fresh(), "bool", None, NumericType(NumericType.Kind.Bool)
 )
 int_type_def = _NumericTypeDef(
     DefId.fresh(), "int", None, NumericType(NumericType.Kind.Int)
@@ -171,8 +166,8 @@ list_type_def = _ListTypeDef(
 )
 
 
-def bool_type() -> OpaqueType:
-    return OpaqueType([], bool_type_def)
+def bool_type() -> NumericType:
+    return NumericType(NumericType.Kind.Bool)
 
 
 def int_type() -> NumericType:
@@ -188,7 +183,7 @@ def linst_type(element_ty: Type) -> OpaqueType:
 
 
 def is_bool_type(ty: Type) -> bool:
-    return isinstance(ty, OpaqueType) and ty.defn == bool_type_def
+    return isinstance(ty, NumericType) and ty.kind == NumericType.Kind.Bool
 
 
 def is_list_type(ty: Type) -> bool:
