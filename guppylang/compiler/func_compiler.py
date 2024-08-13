@@ -47,7 +47,7 @@ def compile_local_func_def(
         [v.name for v, _ in captured] + list(func.ty.input_names),
     )
 
-    def_node = graph.add_def(closure_ty, dfg.node, func.name)
+    def_node = graph.add_def(closure_ty, dfg.node, func.name, func)
     def_input, input_ports = graph.add_input_with_ports(
         list(closure_ty.inputs), def_node
     )

@@ -11,6 +11,7 @@ from hugr.serialization import ops, tys
 from hugr.serialization import serial_hugr as raw
 from hugr.serialization.ops import OpType
 
+from guppylang.ast_util import AstNode, get_file, get_line_offset, line_col
 from guppylang.tys.subst import Inst
 from guppylang.tys.ty import (
     FunctionType,
@@ -299,15 +300,18 @@ class Hugr:
     _children: dict[NodeIdx, list[Node]]
     _default_parent: Node | None
 
-    def __init__(self, name: str | None = None) -> None:
+    def __init__(self, name: str | None = None, file: str | None = None) -> None:
         """Creates a new Hugr."""
         self.name = name or "Unnamed"
         self._default_parent = None
         self._graph = nx.MultiDiGraph()
         self._children = {-1: []}
+        meta_data: dict[str, Any] = {"name": name}
+        if file is not None:
+            meta_data["di"] = {"file": file}
         self.root = self.add_node(
             op=ops.OpType(ops.Module(parent=UNDEFINED)),
-            meta_data={"name": name},
+            meta_data=meta_data,
             parent=None,
         )
 
@@ -335,6 +339,7 @@ class Hugr:
         output_types: TypeList | None = None,
         parent: Node | None = None,
         inputs: list[OutPortV] | None = None,
+        debug: AstNode | None = None,
         meta_data: dict[str, Any] | None = None,
     ) -> VNode:
         """Helper method to add a generic value node to the graph."""
@@ -347,7 +352,7 @@ class Hugr:
             parent=parent,
             in_port_types=[p.ty for p in inputs] if inputs is not None else input_types,
             out_port_types=output_types,
-            meta_data=meta_data or {},
+            meta_data=(meta_data or {}) | debug_metadata(debug),
         )
         self._insert_node(node, inputs)
         return node
@@ -359,6 +364,7 @@ class Hugr:
         output_types: TypeList | None = None,
         parent: Node | None = None,
         inputs: list[OutPortV] | None = None,
+        debug: AstNode | None = None,
         meta_data: dict[str, Any] | None = None,
     ) -> DFContainingVNode:
         """Helper method to add a generic dataflow containing value node to the
@@ -372,7 +378,7 @@ class Hugr:
             parent=parent,
             in_port_types=[p.ty for p in inputs] if inputs is not None else input_types,
             out_port_types=output_types,
-            meta_data=meta_data or {},
+            meta_data=(meta_data or {}) | debug_metadata(debug),
         )
         self._insert_node(node, inputs)
         return node
@@ -625,11 +631,15 @@ class Hugr:
         )
 
     def add_def(
-        self, fun_ty: FunctionType, parent: Node | None, name: str
+        self,
+        fun_ty: FunctionType,
+        parent: Node | None,
+        name: str,
+        debug: AstNode | None = None,
     ) -> DFContainingVNode:
         """Adds a `FucnDefn` node to the graph."""
         op = ops.FuncDefn(name=name, signature=fun_ty.to_hugr_poly(), parent=UNDEFINED)
-        return self._add_dfg_node(ops.OpType(op), [], [fun_ty], parent, None)
+        return self._add_dfg_node(ops.OpType(op), [], [fun_ty], parent, None, debug)
 
     def add_declare(self, fun_ty: FunctionType, parent: Node, name: str) -> VNode:
         """Adds a `FuncDecl` node to the graph."""
@@ -838,6 +848,9 @@ class Hugr:
         nodes: list[ops.OpType] = [
             ops.OpType(ops.Module(parent=UNDEFINED))
         ] * self._graph.number_of_nodes()
+        metadata: list[dict[str, Any]] = [
+            {} for _ in range(self._graph.number_of_nodes())
+        ]
         for n in self.nodes():
             idx = raw_index[n.idx]
             # Nodes without parent have themselves as parent in the serialised format
@@ -845,6 +858,7 @@ class Hugr:
             n.update_op()
             n.op.root.parent = raw_index[parent.idx]
             nodes[idx] = n.op
+            metadata[idx] = n.meta_data
 
         edges: list[raw.Edge] = []
         for src, tgt in self.edges():
@@ -858,8 +872,24 @@ class Hugr:
         for src, tgt in self.order_edges():
             edges.append(((raw_index[src.idx], None), (raw_index[tgt.idx], None)))
 
-        return raw.SerialHugr(nodes=nodes, edges=edges)
+        return raw.SerialHugr(nodes=nodes, edges=edges, metadata=metadata)
 
     def serialize(self) -> str:
         """Serialize this Hugr in JSON format."""
         return self.to_raw().to_json()
+
+
+def debug_metadata(debug: AstNode | None) -> dict[str, Any]:
+    if debug is not None:
+        file = get_file(debug)
+        line, col = line_col(debug)
+        line_offset = get_line_offset(debug)
+        if file is not None and line_offset is not None:
+            return {
+                "di": {
+                    "file": get_file(debug),
+                    "line": line + line_offset - 1,
+                    "col": col,
+                }
+            }
+    return {}

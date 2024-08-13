@@ -121,7 +121,7 @@ class CheckedFunctionDef(ParsedFunctionDef, CompilableDef):
         access to the other compiled functions yet. The body is compiled later in
         `CompiledFunctionDef.compile_inner()`.
         """
-        def_node = graph.add_def(self.ty, parent, self.name)
+        def_node = graph.add_def(self.ty, parent, self.name, self.defined_at)
         return CompiledFunctionDef(
             self.id,
             self.name,

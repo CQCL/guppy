@@ -157,7 +157,7 @@ class CustomFunctionDef(CompiledCallableDef):
         # we explicitly monomorphise here and invoke the call compiler with the
         # inferred type args.
         fun_ty = self.ty.instantiate(type_args)
-        def_node = graph.add_def(fun_ty, dfg.node, self.name)
+        def_node = graph.add_def(fun_ty, dfg.node, self.name, self.defined_at)
         with graph.parent(def_node):
             _, inp_ports = graph.add_input_with_ports(list(fun_ty.inputs))
             returns = self.compile_call(
@@ -279,7 +279,10 @@ class OpCompiler(CustomCallCompiler):
 
     def compile(self, args: list[OutPortV]) -> list[OutPortV]:
         node = self.graph.add_node(
-            self.op.model_copy(deep=True), inputs=args, parent=self.dfg.node
+            self.op.model_copy(deep=True),
+            inputs=args,
+            parent=self.dfg.node,
+            debug=self.node,
         )
         return_ty = get_type(self.node)
         return [node.add_out_port(ty) for ty in type_to_row(return_ty)]
