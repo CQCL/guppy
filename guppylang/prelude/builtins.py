@@ -15,6 +15,7 @@ from guppylang.prelude._internal.checker import (
     DunderChecker,
     FailingChecker,
     NewArrayChecker,
+    RangeChecker,
     ResultChecker,
     ReversingChecker,
     UnsupportedChecker,
@@ -29,6 +30,7 @@ from guppylang.prelude._internal.compiler import (
     IntTruedivCompiler,
     NatTruedivCompiler,
     NewArrayCompiler,
+    RangeCompiler,
 )
 from guppylang.prelude._internal.util import (
     custom_op,
@@ -884,17 +886,20 @@ def property(x): ...
 
 @guppy.struct(builtins)
 class Range:
+    start: int
     stop: int
+    step: int
 
     @guppy(builtins)
     def __iter__(self: "Range") -> "RangeIter":
-        return RangeIter(0, self.stop)  # type: ignore[call-arg]
+        return RangeIter(self.start, self.stop, self.step)  # type:ignore[call-arg]
 
 
 @guppy.struct(builtins)
 class RangeIter:
-    next: int
+    start: int
     stop: int
+    step: int
 
     @guppy(builtins)
     def __iter__(self: "RangeIter") -> "RangeIter":
@@ -902,25 +907,24 @@ class RangeIter:
 
     @guppy(builtins)
     def __hasnext__(self: "RangeIter") -> tuple[bool, "RangeIter"]:
-        return (self.next < self.stop, self)
+        res = (self.start < self.stop) if self.step >= 0 else (self.start > self.stop)
+        return (res, self)
 
     @guppy(builtins)
     def __next__(self: "RangeIter") -> tuple[int, "RangeIter"]:
         # Fine not to check bounds while we can only be called from inside a `for` loop.
         # if self.start >= self.stop:
         #    raise StopIteration
-        return (self.next, RangeIter(self.next + 1, self.stop))  # type: ignore[call-arg]
+        new_self = RangeIter(self.start + self.step, self.stop, self.step)  # type: ignore[call-arg]
+        return (self.start, new_self)
 
     @guppy(builtins)
     def __end__(self: "RangeIter") -> None:
         pass
 
 
-@guppy(builtins)
-def range(stop: int) -> Range:
-    """Limited version of python range().
-    Only a single argument (stop/limit) is supported."""
-    return Range(stop)  # type: ignore[call-arg]
+@guppy.custom(builtins, RangeCompiler(), RangeChecker())
+def range(start: int, stop: int, step: int) -> Range: ...
 
 
 @guppy.custom(builtins, checker=UnsupportedChecker(), higher_order_value=False)

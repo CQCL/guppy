@@ -75,6 +75,27 @@ class ReversingChecker(CustomCallChecker):
         return expr, ty
 
 
+class RangeChecker(DefaultCallChecker):
+    """Provides supports for optional args of "range" function
+    (where a single argument goes to the *second* parameter)"""
+
+    @staticmethod
+    def _mutate_args(args: list[ast.expr]) -> list[ast.expr]:
+        if len(args) == 1:
+            # provided is "stop" index; "start" index of 0 goes first
+            args.insert(0, ast.Constant(value=0))
+        if len(args) == 2:
+            # missing step - default 1
+            args.append(ast.Constant(1))
+        return args
+
+    def check(self, args: list[ast.expr], ty: Type) -> tuple[ast.expr, Subst]:
+        return super().check(self._mutate_args(args), ty)
+
+    def synthesize(self, args: list[ast.expr]) -> tuple[ast.expr, Type]:
+        return super().synthesize(self._mutate_args(args))
+
+
 class FailingChecker(CustomCallChecker):
     """Call checker for Python functions that are not available in Guppy.
 

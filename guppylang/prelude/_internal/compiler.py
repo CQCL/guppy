@@ -438,3 +438,37 @@ def build_array_set(
     )
     array, swapped_elem = iter(builder.add_op(op, array, idx, elem))
     return array, swapped_elem
+
+
+class RangeCompiler(CustomCallCompiler):
+    def compile(self, args: list[Wire]) -> list[Wire]:
+        from typing import cast
+
+        from guppylang.compiler.expr_compiler import python_value_to_hugr
+        from guppylang.definition.custom import CustomFunctionDef
+
+        # Find the builtins module. Brute-force search!
+        # (But we hope this to be quick as we expect most entries to be in builtins)
+        builtins = next(
+            def_id.module
+            for def_id in self.globals
+            if def_id.module is not None and def_id.module.name == "builtins"
+        )
+        id_Range = builtins._globals["Range"].id
+        id_new = builtins._globals.impls[id_Range]["__new__"]
+        ty = NumericType(NumericType.Kind.Int)
+        if len(args) == 1:
+            const0 = python_value_to_hugr(0, ty)
+            assert const0 is not None
+            args.insert(0, self.builder.load(const0))
+        if len(args) == 2:
+            const1 = python_value_to_hugr(1, ty)
+            assert const1 is not None
+            args.append(self.builder.load(const1))
+        # python would raise ValueError if step == 0, we have no way to indicate here
+        # so will produce a Range that just repeats its first argument
+        call_rets = cast(CustomFunctionDef, self.globals[id_new]).compile_call(
+            args, [], self.dfg, self.globals, self.node
+        )
+        assert len(call_rets.inout_returns) == 0
+        return call_rets.regular_returns
