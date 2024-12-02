@@ -19,26 +19,16 @@ extensions = [
     "sphinx.ext.intersphinx",
 ]
 
-html_theme = "sphinx_book_theme"
-
+html_theme = "furo"
 html_title = "Guppy compiler development docs"
+html_theme_options = {}
 
-html_theme_options = {
-    "repository_url": "https://github.com/CQCL/guppylang",
-    "use_repository_button": True,
-    "navigation_with_keys": True,
-    "logo": {
-        "image_light": "_static/Quantinuum_logo_black.png",
-        "image_dark": "_static/Quantinuum_logo_white.png",
-    },
-}
-
-html_static_path = ["../_static"]
-html_css_files = ["custom.css"]
+html_static_path = ["../_static", "../quantinuum-sphinx/_static"]
+templates_path = ["_templates", "../quantinuum-sphinx/_templates"]
+html_favicon = "../quantinuum-sphinx/_static/assets/quantinuum_favicon.svg"
 
 autosummary_generate = True
 
-templates_path = ["_templates"]
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
 intersphinx_mapping = {
