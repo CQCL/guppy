@@ -13,7 +13,7 @@ from hugr.package import FuncDefnPointer, ModulePointer
 
 import guppylang
 from guppylang.ast_util import annotate_location
-from guppylang.definition.common import DefId, Definition
+from guppylang.definition.common import DefId
 from guppylang.definition.const import RawConstDef
 from guppylang.definition.custom import (
     CustomCallChecker,
@@ -23,18 +23,15 @@ from guppylang.definition.custom import (
     OpCompiler,
     RawCustomFunctionDef,
 )
-from guppylang.definition.declaration import RawFunctionDecl
 from guppylang.definition.extern import RawExternDef
 from guppylang.definition.function import (
     CompiledFunctionDef,
     RawFunctionDef,
 )
 from guppylang.definition.parameter import ConstVarDef, TypeVarDef
-from guppylang.definition.pytket_circuits import (
-    RawLoadPytketDef,
-    RawPytketDef,
-)
+from guppylang.definition.pytket_circuits import RawLoadPytketDef
 from guppylang.definition.struct import RawStructDef
+from guppylang.definition.traced import RawTracedFunctionDef
 from guppylang.definition.ty import OpaqueTypeDef, TypeDef
 from guppylang.error import MissingModuleError, pretty_errors
 from guppylang.ipython_inspect import (
@@ -51,6 +48,7 @@ from guppylang.module import (
     sphinx_running,
 )
 from guppylang.span import Loc, SourceMap, Span
+from guppylang.tracing.object import GuppyDefinition
 from guppylang.tys.arg import Argument
 from guppylang.tys.param import Parameter
 from guppylang.tys.subst import Inst
@@ -60,13 +58,8 @@ S = TypeVar("S")
 T = TypeVar("T")
 Decorator = Callable[[S], T]
 
-FuncDefDecorator = Decorator[PyFunc, RawFunctionDef]
-FuncDeclDecorator = Decorator[PyFunc, RawFunctionDecl]
-CustomFuncDecorator = Decorator[PyFunc, RawCustomFunctionDef]
-PytketDecorator = Decorator[PyFunc, RawPytketDef]
-ClassDecorator = Decorator[PyClass, PyClass]
-OpaqueTypeDecorator = Decorator[PyClass, OpaqueTypeDef]
-StructDecorator = Decorator[PyClass, RawStructDef]
+FuncDecorator = Decorator[PyFunc, GuppyDefinition]
+ClassDecorator = Decorator[PyClass, GuppyDefinition]
 
 
 _JUPYTER_NOTEBOOK_MODULE = "<jupyter-notebook>"
@@ -101,21 +94,22 @@ class _Guppy:
         self._sources = SourceMap()
 
     @overload
-    def __call__(self, arg: PyFunc) -> RawFunctionDef: ...
+    def __call__(self, arg: PyFunc) -> GuppyDefinition: ...
 
     @overload
-    def __call__(self, arg: GuppyModule) -> FuncDefDecorator: ...
+    def __call__(self, arg: GuppyModule) -> FuncDecorator: ...
 
     @pretty_errors
-    def __call__(self, arg: PyFunc | GuppyModule) -> FuncDefDecorator | RawFunctionDef:
+    def __call__(self, arg: PyFunc | GuppyModule) -> FuncDecorator | GuppyDefinition:
         """Decorator to annotate Python functions as Guppy code.
 
         Optionally, the `GuppyModule` in which the function should be placed can
         be passed to the decorator.
         """
 
-        def dec(f: Callable[..., Any], module: GuppyModule) -> RawFunctionDef:
-            return module.register_func_def(f)
+        def dec(f: Callable[..., Any], module: GuppyModule) -> GuppyDefinition:
+            defn = module.register_func_def(f)
+            return GuppyDefinition(defn)
 
         return self._with_optional_module(dec, arg)
 
@@ -173,6 +167,15 @@ class _Guppy:
             module_path, module.__name__ if module else module_path.name, module
         )
 
+    @pretty_errors
+    def traced(self, arg: PyFunc | GuppyModule) -> FuncDecorator | GuppyDefinition:
+        def dec(f: Callable[..., Any], module: GuppyModule) -> GuppyDefinition:
+            defn = RawTracedFunctionDef(DefId.fresh(module), f.__name__, None, f, {})
+            module.register_def(defn)
+            return GuppyDefinition(defn)
+
+        return self._with_optional_module(dec, arg)
+
     def init_module(self, import_builtins: bool = True) -> None:
         """Manually initialises a Guppy module for the current Python file.
 
@@ -188,7 +191,7 @@ class _Guppy:
     @pretty_errors
     def extend_type(
         self, defn: TypeDef, module: GuppyModule | None = None
-    ) -> ClassDecorator:
+    ) -> Callable[[type], type]:
         """Decorator to add new instance functions to a type."""
         mod = module or self.get_module()
         mod._instance_func_buffer = {}
@@ -208,7 +211,7 @@ class _Guppy:
         bound: ht.TypeBound | None = None,
         params: Sequence[Parameter] | None = None,
         module: GuppyModule | None = None,
-    ) -> OpaqueTypeDecorator:
+    ) -> ClassDecorator:
         """Decorator to annotate a class definitions as Guppy types.
 
         Requires the static Hugr translation of the type. Additionally, the type can be
@@ -224,7 +227,7 @@ class _Guppy:
 
         mk_hugr_ty = (lambda _: hugr_ty) if isinstance(hugr_ty, ht.Type) else hugr_ty
 
-        def dec(c: type) -> OpaqueTypeDef:
+        def dec(c: type) -> GuppyDefinition:
             defn = OpaqueTypeDef(
                 DefId.fresh(mod),
                 name or c.__name__,
@@ -236,14 +239,14 @@ class _Guppy:
             )
             mod.register_def(defn)
             mod._register_buffered_instance_funcs(defn)
-            return defn
+            return GuppyDefinition(defn)
 
         return dec
 
     @property
     def struct(
         self,
-    ) -> Callable[[PyClass | GuppyModule], StructDecorator | RawStructDef]:
+    ) -> Callable[[PyClass | GuppyModule], ClassDecorator | GuppyDefinition]:
         """Decorator to define a new struct."""
         # Note that this is a property. Thus, the code below is executed *before*
         # the members of the decorated class are executed.
@@ -263,7 +266,7 @@ class _Guppy:
         frame = get_calling_frame()
         python_scope = frame.f_globals | frame.f_locals if frame else {}
 
-        def dec(cls: type, module: GuppyModule) -> RawStructDef:
+        def dec(cls: type, module: GuppyModule) -> GuppyDefinition:
             defn = RawStructDef(
                 DefId.fresh(module), cls.__name__, None, cls, python_scope
             )
@@ -276,9 +279,9 @@ class _Guppy:
                 implicit_module._instance_func_buffer = None
                 if not implicit_module_existed:
                     self._modules.pop(caller_id)
-            return defn
+            return GuppyDefinition(defn)
 
-        def higher_dec(arg: GuppyModule | PyClass) -> StructDecorator | RawStructDef:
+        def higher_dec(arg: GuppyModule | PyClass) -> ClassDecorator | GuppyDefinition:
             if isinstance(arg, GuppyModule):
                 arg._instance_func_buffer = {}
             return self._with_optional_module(dec, arg)
@@ -317,7 +320,7 @@ class _Guppy:
         higher_order_value: bool = True,
         name: str = "",
         module: GuppyModule | None = None,
-    ) -> CustomFuncDecorator:
+    ) -> FuncDecorator:
         """Decorator to add custom typing or compilation behaviour to function decls.
 
         Optionally, usage of the function as a higher-order value can be disabled. In
@@ -326,7 +329,7 @@ class _Guppy:
         """
         mod = module or self.get_module()
 
-        def dec(f: PyFunc) -> RawCustomFunctionDef:
+        def dec(f: PyFunc) -> GuppyDefinition:
             call_checker = checker or DefaultCallChecker()
             func = RawCustomFunctionDef(
                 DefId.fresh(mod),
@@ -338,7 +341,7 @@ class _Guppy:
                 higher_order_value,
             )
             mod.register_def(func)
-            return func
+            return GuppyDefinition(func)
 
         return dec
 
@@ -349,7 +352,7 @@ class _Guppy:
         higher_order_value: bool = True,
         name: str = "",
         module: GuppyModule | None = None,
-    ) -> CustomFuncDecorator:
+    ) -> FuncDecorator:
         """Decorator to annotate function declarations as HUGR ops.
 
         Args:
@@ -364,22 +367,23 @@ class _Guppy:
         return self.custom(OpCompiler(op), checker, higher_order_value, name, module)
 
     @overload
-    def declare(self, arg: GuppyModule) -> RawFunctionDecl: ...
+    def declare(self, arg: GuppyModule) -> GuppyDefinition: ...
 
     @overload
-    def declare(self, arg: PyFunc) -> FuncDeclDecorator: ...
+    def declare(self, arg: PyFunc) -> FuncDecorator: ...
 
-    def declare(self, arg: GuppyModule | PyFunc) -> FuncDeclDecorator | RawFunctionDecl:
+    def declare(self, arg: GuppyModule | PyFunc) -> FuncDecorator | GuppyDefinition:
         """Decorator to declare functions"""
 
-        def dec(f: Callable[..., Any], module: GuppyModule) -> RawFunctionDecl:
-            return module.register_func_decl(f)
+        def dec(f: Callable[..., Any], module: GuppyModule) -> GuppyDefinition:
+            defn = module.register_func_decl(f)
+            return GuppyDefinition(defn)
 
         return self._with_optional_module(dec, arg)
 
     def constant(
         self, name: str, ty: str, value: hv.Value, module: GuppyModule | None = None
-    ) -> RawConstDef:
+    ) -> GuppyDefinition:
         """Adds a constant to a module, backed by a `hugr.val.Value`."""
         module = module or self.get_module()
         type_ast = _parse_expr_string(
@@ -387,7 +391,7 @@ class _Guppy:
         )
         defn = RawConstDef(DefId.fresh(module), name, None, type_ast, value)
         module.register_def(defn)
-        return defn
+        return GuppyDefinition(defn)
 
     def extern(
         self,
@@ -396,7 +400,7 @@ class _Guppy:
         symbol: str | None = None,
         constant: bool = True,
         module: GuppyModule | None = None,
-    ) -> RawExternDef:
+    ) -> GuppyDefinition:
         """Adds an extern symbol to a module."""
         module = module or self.get_module()
         type_ast = _parse_expr_string(
@@ -406,7 +410,7 @@ class _Guppy:
             DefId.fresh(module), name, None, symbol or name, constant, type_ast
         )
         module.register_def(defn)
-        return defn
+        return GuppyDefinition(defn)
 
     def load(self, m: ModuleType | GuppyModule) -> None:
         caller = self._get_python_caller()
@@ -434,10 +438,10 @@ class _Guppy:
             elif id.name == _JUPYTER_NOTEBOOK_MODULE:
                 globs = get_ipython_globals()
             if globs:
-                defs: dict[str, Definition | ModuleType] = {}
+                defs: dict[str, GuppyDefinition | ModuleType] = {}
                 for x, value in globs.items():
-                    if isinstance(value, Definition):
-                        other_module = value.id.module
+                    if isinstance(value, GuppyDefinition):
+                        other_module = value.wrapped.id.module
                         if other_module and other_module != module:
                             defs[x] = value
                     elif isinstance(value, ModuleType):
@@ -462,7 +466,9 @@ class _Guppy:
             raise MissingModuleError(err)
         return module.compile()
 
-    def compile_function(self, f_def: RawFunctionDef) -> FuncDefnPointer:
+    def compile_function(
+        self, f_def: RawFunctionDef | RawTracedFunctionDef
+    ) -> FuncDefnPointer:
         """Compiles a single function definition."""
         module = f_def.id.module
         if not module:
@@ -485,7 +491,7 @@ class _Guppy:
     @pretty_errors
     def pytket(
         self, input_circuit: Any, module: GuppyModule | None = None
-    ) -> PytketDecorator:
+    ) -> FuncDecorator:
         """Adds a pytket circuit function definition with explicit signature."""
         err_msg = "Only pytket circuits can be passed to guppy.pytket"
         try:
@@ -499,15 +505,16 @@ class _Guppy:
 
         mod = module or self.get_module()
 
-        def func(f: PyFunc) -> RawPytketDef:
-            return mod.register_pytket_func(f, input_circuit)
+        def func(f: PyFunc) -> GuppyDefinition:
+            defn = mod.register_pytket_func(f, input_circuit)
+            return GuppyDefinition(defn)
 
         return func
 
     @pretty_errors
     def load_pytket(
         self, name: str, input_circuit: Any, module: GuppyModule | None = None
-    ) -> RawLoadPytketDef:
+    ) -> GuppyDefinition:
         """Adds a pytket circuit function definition with implicit signature."""
         err_msg = "Only pytket circuits can be passed to guppy.load_pytket"
         try:
@@ -523,7 +530,7 @@ class _Guppy:
         span = _find_load_call(self._sources)
         defn = RawLoadPytketDef(DefId.fresh(module), name, None, span, input_circuit)
         mod.register_def(defn)
-        return defn
+        return GuppyDefinition(defn)
 
 
 class _GuppyDummy:

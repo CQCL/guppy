@@ -18,7 +18,6 @@ from guppylang.definition.common import (
     CheckableDef,
     CompiledDef,
     DefId,
-    Definition,
     ParsableDef,
     UnknownSourceError,
 )
@@ -33,6 +32,7 @@ from guppylang.diagnostic import Error, Help
 from guppylang.error import GuppyError, InternalGuppyError
 from guppylang.ipython_inspect import find_ipython_def, is_running_ipython
 from guppylang.span import SourceMap
+from guppylang.tracing.object import GuppyDefinition
 from guppylang.tys.arg import Argument
 from guppylang.tys.param import Parameter, check_all_args
 from guppylang.tys.parsing import type_from_ast
@@ -134,7 +134,7 @@ class RawStructDef(TypeDef, ParsableDef):
                 # Ensure that all function definitions are Guppy functions
                 case _, ast.FunctionDef(name=name) as node:
                     v = getattr(self.python_class, name)
-                    if not isinstance(v, Definition):
+                    if not isinstance(v, GuppyDefinition):
                         raise GuppyError(NonGuppyMethodError(node, self.name, name))
                     used_func_names[name] = node
                     if name in used_field_names:

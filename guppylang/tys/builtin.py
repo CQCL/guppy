@@ -272,6 +272,14 @@ def get_element_type(ty: Type) -> Type:
     return arg.ty
 
 
+def get_array_length(ty: Type) -> Const:
+    assert isinstance(ty, OpaqueType)
+    assert ty.defn == array_type_def
+    [_, length_arg] = ty.args
+    assert isinstance(length_arg, ConstArg)
+    return length_arg.const
+
+
 def get_iter_size(ty: Type) -> Const:
     assert isinstance(ty, OpaqueType)
     assert ty.defn == sized_iter_type_def

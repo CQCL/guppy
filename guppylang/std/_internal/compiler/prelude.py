@@ -125,7 +125,7 @@ def build_unwrap_left(
 
 
 def build_unwrap(
-    builder: DfBase[ops.DfParentOp], option: Wire, error_msg: str, error_signal: int = 1
+    builder: DfBase[P], option: Wire, error_msg: str, error_signal: int = 1
 ) -> Node:
     """Unwraps an `hugr.tys.Option` value, panicking with the given message if the
     result is an error.

@@ -1,7 +1,7 @@
 from abc import abstractmethod
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from hugr import tys
 
@@ -40,12 +40,6 @@ class OpaqueTypeDef(TypeDef, CompiledDef):
     always_linear: bool
     to_hugr: Callable[[Sequence[Argument]], tys.Type]
     bound: tys.TypeBound | None = None
-
-    def __getitem__(self, item: Any) -> "OpaqueTypeDef":
-        """Dummy implementation to allow generic instantiations in type signatures that
-        are evaluated by the Python interpreter.
-        """
-        return self
 
     def check_instantiate(
         self, args: Sequence[Argument], globals: "Globals", loc: AstNode | None = None

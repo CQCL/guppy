@@ -1165,7 +1165,7 @@ def eval_py_expr(node: PyExpr, ctx: Context) -> Any:
 
 
 def python_value_to_guppy_type(
-    v: Any, node: ast.expr, globals: Globals, type_hint: Type | None = None
+    v: Any, node: ast.AST, globals: Globals, type_hint: Type | None = None
 ) -> Type | None:
     """Turns a primitive Python value into a Guppy type.
 
@@ -1208,7 +1208,7 @@ def python_value_to_guppy_type(
 
 
 def _python_list_to_guppy_type(
-    vs: list[Any], node: ast.expr, globals: Globals, type_hint: Type | None
+    vs: list[Any], node: ast.AST, globals: Globals, type_hint: Type | None
 ) -> OpaqueType | None:
     """Turns a Python list into a Guppy type.
 

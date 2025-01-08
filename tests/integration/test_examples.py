@@ -8,6 +8,11 @@ def test_demo_notebook(nb_regression):
     nb_regression.check("examples/demo.ipynb")
 
 
+def test_tracing_notebook(nb_regression):
+    nb_regression.diff_ignore += ("/metadata/language_info/version",)
+    nb_regression.check("examples/tracing.ipynb")
+
+
 def test_random_walk_qpe(validate):
     from examples.random_walk_qpe import hugr
 

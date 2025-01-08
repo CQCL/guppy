@@ -32,6 +32,7 @@ from guppylang.definition.struct import CheckedStructDef
 from guppylang.definition.ty import TypeDef
 from guppylang.error import pretty_errors
 from guppylang.experimental import enable_experimental_features
+from guppylang.tracing.object import GuppyDefinition
 
 if TYPE_CHECKING:
     from hugr import Hugr, ops
@@ -107,8 +108,8 @@ class GuppyModule:
 
     def load(
         self,
-        *args: Definition | GuppyModule | ModuleType,
-        **kwargs: Definition | GuppyModule | ModuleType,
+        *args: GuppyDefinition | GuppyModule | ModuleType,
+        **kwargs: GuppyDefinition | GuppyModule | ModuleType,
     ) -> None:
         """Imports another Guppy module or selected definitions from a module.
 
@@ -124,17 +125,17 @@ class GuppyModule:
         names: dict[str, DefId] = {}
 
         # Collect imports in reverse since we'll use it as a stack to push and pop from
-        imports: list[tuple[str, Definition | GuppyModule | ModuleType]] = [
+        imports: list[tuple[str, GuppyDefinition | GuppyModule | ModuleType]] = [
             *reversed(kwargs.items()),
             *(("", arg) for arg in reversed(args)),
         ]
         while imports:
             alias, imp = imports.pop()
-            if isinstance(imp, Definition):
-                module = imp.id.module
+            if isinstance(imp, GuppyDefinition):
+                module = imp.wrapped.id.module
                 assert module is not None
                 module.check()
-                names[alias or imp.name] = imp.id
+                names[alias or imp.wrapped.name] = imp.wrapped.id
                 modules.add(module)
             elif isinstance(imp, GuppyModule):
                 imp.check()
@@ -182,7 +183,7 @@ class GuppyModule:
             mod.check()
             self.load(
                 *(
-                    defn
+                    GuppyDefinition(defn)
                     for defn in mod._globals.defs.values()
                     if not defn.name.startswith("_")
                 )
@@ -351,11 +352,14 @@ class GuppyModule:
         graph.metadata["name"] = self.name
 
         # Lower definitions to Hugr
-        ctx = CompiledGlobals(
-            checked_defs, graph, self._imported_globals | self._globals
-        )
-        for defn in self._checked_defs.values():
-            ctx.compile(defn)
+        from guppylang.tracing.state import set_tracing_globals
+
+        with set_tracing_globals(self._globals | self._imported_globals):
+            ctx = CompiledGlobals(
+                checked_defs, graph, self._imported_globals | self._globals
+            )
+            for defn in self._checked_defs.values():
+                ctx.compile(defn)
 
         # TODO: Currently we just include a hardcoded list of extensions. We should
         # compute this dynamically from the imported dependencies instead.
