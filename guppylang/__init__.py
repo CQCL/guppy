@@ -7,4 +7,4 @@ from guppylang.std.quantum import qubit
 
 # This is updated by our release-please workflow, triggered by this
 # annotation: x-release-please-version
-__version__ = "0.14.0"
+__version__ = "0.15.0"
