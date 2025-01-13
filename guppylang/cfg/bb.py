@@ -63,6 +63,15 @@ class BB(ABC):
     predecessors: list[Self] = field(default_factory=list)
     successors: list[Self] = field(default_factory=list)
 
+    # Whether this BB is reachable from the entry
+    reachable: bool = False
+
+    # Dummy predecessors and successors that correspond to branches that are provably
+    # never taken. For example, `if False: ...` statements emit only dummy control-flow
+    # links.
+    dummy_predecessors: list[Self] = field(default_factory=list)
+    dummy_successors: list[Self] = field(default_factory=list)
+
     # If the BB has multiple successors, we need a predicate to decide to which one to
     # jump to
     branch_pred: ast.expr | None = None
@@ -93,9 +102,7 @@ class BB(ABC):
     @property
     def is_exit(self) -> bool:
         """Whether this is the exit BB."""
-        # The exit BB is the only one without successors (otherwise we would have gotten
-        # an unreachable code error during CFG building)
-        return len(self.successors) == 0
+        return self == self.containing_cfg.exit_bb
 
 
 class VariableVisitor(ast.NodeVisitor):

@@ -41,6 +41,17 @@ def compile_cfg(
 
     builder = container.add_cfg(*inputs)
 
+    # Explicitly annotate the output types since Hugr can't infer them if the exit is
+    # unreachable
+    out_tys = [place.ty.to_hugr() for place in cfg.exit_bb.sig.input_row]
+    # TODO: Use proper API for this once it's added in hugr-py:
+    #  https://github.com/CQCL/hugr/issues/1816
+    builder._exit_op._cfg_outputs = out_tys
+    builder.parent_op._outputs = out_tys
+    builder.parent_node = builder.hugr._update_node_outs(
+        builder.parent_node, len(out_tys)
+    )
+
     blocks: dict[CheckedBB[Place], ToNode] = {}
     for bb in cfg.bbs:
         blocks[bb] = compile_bb(bb, builder, bb == cfg.entry_bb, globals)
@@ -62,9 +73,12 @@ def compile_bb(
     If the basic block is the output block, returns `None`.
     """
     # The exit BB is completely empty
-    if len(bb.successors) == 0:
+    if bb.is_exit:
         assert len(bb.statements) == 0
         return builder.exit
+
+    # Unreachable BBs (besides the exit) should have been removed by now
+    assert bb.reachable
 
     # Otherwise, we use a regular `Block` node
     block: hc.Block

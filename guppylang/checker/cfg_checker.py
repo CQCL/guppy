@@ -35,9 +35,11 @@ class Signature(Generic[V]):
     input_row: Row[V]
     output_rows: Sequence[Row[V]]  # One for each successor
 
+    dummy_output_rows: Sequence[Row[V]] = field(default_factory=list)
+
     @staticmethod
     def empty() -> "Signature[V]":
-        return Signature([], [])
+        return Signature([], [], [])
 
 
 @dataclass(eq=False)  # Disable equality to recover hash from `object`
@@ -76,8 +78,8 @@ def check_cfg(
     """
     # First, we need to run program analysis
     ass_before = {v.name for v in inputs}
-    inout_vars = [v.name for v in inputs if InputFlags.Inout in v.flags]
-    cfg.analyze(ass_before, ass_before, inout_vars)
+    inout_vars = [v for v in inputs if InputFlags.Inout in v.flags]
+    cfg.analyze(ass_before, ass_before, [v.name for v in inout_vars])
 
     # We start by compiling the entry BB
     checked_cfg: CheckedCFG[Variable] = CheckedCFG([v.ty for v in inputs], return_ty)
@@ -93,13 +95,16 @@ def check_cfg(
         (checked_cfg.entry_bb, i, succ)
         # We enumerate the successor starting from the back, so we start with the `True`
         # branch. This way, we find errors in a more natural order
-        for i, succ in reverse_enumerate(cfg.entry_bb.successors)
+        for i, succ in reverse_enumerate(
+            cfg.entry_bb.successors + cfg.entry_bb.dummy_successors
+        )
     )
     while len(queue) > 0:
         pred, num_output, bb = queue.popleft()
+        pred_outputs = [*pred.sig.output_rows, *pred.sig.dummy_output_rows]
         input_row = [
             Variable(v.name, v.ty, v.defined_at, v.flags)
-            for v in pred.sig.output_rows[num_output]
+            for v in pred_outputs[num_output]
         ]
 
         if bb in compiled:
@@ -119,16 +124,26 @@ def check_cfg(
             ]
             compiled[bb] = checked_bb
 
-        # Link up BBs in the checked CFG
-        compiled[bb].predecessors.append(pred)
-        pred.successors[num_output] = compiled[bb]
+        # Link up BBs in the checked CFG, excluding the unreachable ones
+        if bb.reachable:
+            compiled[bb].predecessors.append(pred)
+            pred.successors[num_output] = compiled[bb]
 
-    checked_cfg.bbs = list(compiled.values())
-    checked_cfg.exit_bb = compiled[cfg.exit_bb]  # TODO: Fails if exit is unreachable
-    checked_cfg.live_before = {compiled[bb]: cfg.live_before[bb] for bb in cfg.bbs}
-    checked_cfg.ass_before = {compiled[bb]: cfg.ass_before[bb] for bb in cfg.bbs}
+    # The exit BB might be unreachable. In that case it won't be visited above and we
+    # have to handle it here
+    if cfg.exit_bb not in compiled:
+        assert not cfg.exit_bb.reachable
+        compiled[cfg.exit_bb] = CheckedBB(
+            cfg.exit_bb.idx, checked_cfg, reachable=False, sig=Signature(inout_vars, [])
+        )
+
+    required_bbs = [bb for bb in cfg.bbs if bb.reachable or bb.is_exit]
+    checked_cfg.bbs = [compiled[bb] for bb in required_bbs]
+    checked_cfg.exit_bb = compiled[cfg.exit_bb]
+    checked_cfg.live_before = {compiled[bb]: cfg.live_before[bb] for bb in required_bbs}
+    checked_cfg.ass_before = {compiled[bb]: cfg.ass_before[bb] for bb in required_bbs}
     checked_cfg.maybe_ass_before = {
-        compiled[bb]: cfg.maybe_ass_before[bb] for bb in cfg.bbs
+        compiled[bb]: cfg.maybe_ass_before[bb] for bb in required_bbs
     }
 
     # Finally, run the linearity check
@@ -205,7 +220,7 @@ def check_bb(
         bb.branch_pred, ty = ExprSynthesizer(ctx).synthesize(bb.branch_pred)
         bb.branch_pred, _ = to_bool(bb.branch_pred, ty, ctx)
 
-    for succ in bb.successors:
+    for succ in bb.successors + bb.dummy_successors:
         for x, use_bb in cfg.live_before[succ].items():
             # Check that the variables requested by the successor are defined
             if x not in ctx.locals and x not in ctx.globals:
@@ -227,10 +242,18 @@ def check_bb(
         [ctx.locals[x] for x in cfg.live_before[succ] if x in ctx.locals]
         for succ in bb.successors
     ]
+    dummy_outputs = [
+        [ctx.locals[x] for x in cfg.live_before[succ] if x in ctx.locals]
+        for succ in bb.dummy_successors
+    ]
 
     # Also prepare the successor list so we can fill it in later
     checked_bb = CheckedBB(
-        bb.idx, checked_cfg, checked_stmts, sig=Signature(inputs, outputs)
+        bb.idx,
+        checked_cfg,
+        checked_stmts,
+        reachable=bb.reachable,
+        sig=Signature(inputs, outputs, dummy_outputs),
     )
     checked_bb.successors = [None] * len(bb.successors)  # type: ignore[list-item]
     checked_bb.branch_pred = bb.branch_pred

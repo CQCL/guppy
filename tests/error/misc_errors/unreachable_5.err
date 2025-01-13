@@ -1,8 +1,0 @@
-Error: Unreachable (at $FILE:8:8)
-  | 
-6 |     while x:
-7 |         return 42
-8 |         x = 42
-  |         ^^^^^^ This code is not reachable
-
-Guppy compilation failed due to 1 previous error

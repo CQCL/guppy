@@ -10,7 +10,7 @@ from enum import Enum, auto
 from typing import TYPE_CHECKING, NamedTuple, TypeGuard
 
 from guppylang.ast_util import AstNode, find_nodes, get_type
-from guppylang.cfg.analysis import LivenessAnalysis
+from guppylang.cfg.analysis import LivenessAnalysis, LivenessDomain
 from guppylang.cfg.bb import BB, VariableStats
 from guppylang.checker.cfg_checker import CheckedBB, CheckedCFG, Row, Signature
 from guppylang.checker.core import (
@@ -610,9 +610,30 @@ def check_cfg_linearity(
             for leaf in leaf_places(var):
                 exit_scope.use(leaf.id, InoutReturnSentinel(var=var), UseKind.RETURN)
 
-    # Run liveness analysis
+    # Edge case: If the exit is unreachable, then the function will never terminate, so
+    # there is no need to give the borrowed values back to the caller. To ensure that
+    # the generated Hugr is still valid, we have to thread the borrowed arguments
+    # through the non-terminating loop. We achieve this by considering borrowed
+    # variables as live in every BB, even if the actual use in the exit is unreachable.
+    # This is done by including borrowed vars in the initial value for the liveness
+    # analysis below. The analogous thing was also done in the previous `CFG.analyze`
+    # pass.
+    live_default: LivenessDomain[PlaceId] = (
+        {
+            leaf.id: cfg.exit_bb
+            for var in cfg.entry_bb.sig.input_row
+            if InputFlags.Inout in var.flags
+            for leaf in leaf_places(var)
+        }
+        if not cfg.exit_bb.reachable
+        else {}
+    )
+
+    # Run liveness analysis with this initial value
     stats = {bb: scope.stats() for bb, scope in scopes.items()}
-    live_before = LivenessAnalysis(stats).run(cfg.bbs)
+    live_before = LivenessAnalysis(
+        stats, initial=live_default, include_unreachable=False
+    ).run(cfg.bbs)
 
     # Construct a CFG that tracks places instead of just variables
     result_cfg: CheckedCFG[Place] = CheckedCFG(cfg.input_tys, cfg.output_ty)
@@ -700,7 +721,12 @@ def check_cfg_linearity(
             ],
         )
         checked[bb] = CheckedBB(
-            bb.idx, result_cfg, bb.statements, branch_pred=bb.branch_pred, sig=sig
+            bb.idx,
+            result_cfg,
+            bb.statements,
+            branch_pred=bb.branch_pred,
+            reachable=bb.reachable,
+            sig=sig,
         )
 
     # Fill in missing fields of the result CFG

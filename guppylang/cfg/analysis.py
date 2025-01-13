@@ -19,6 +19,11 @@ class Analysis(Generic[T], ABC):
         return t1 == t2
 
     @abstractmethod
+    def include_unreachable(self) -> bool:
+        """Whether unreachable BBs and jumps should be taken into account for the
+        analysis."""
+
+    @abstractmethod
     def initial(self) -> T:
         """Initial lattice value"""
 
@@ -46,12 +51,19 @@ class ForwardAnalysis(Generic[T], Analysis[T], ABC):
 
         Returns a mapping from basic blocks to lattice values at the start of each BB.
         """
+        if not self.include_unreachable():
+            bbs = [bb for bb in bbs if bb.reachable]
         vals_before = {bb: self.initial() for bb in bbs}  # return value
         vals_after = {bb: self.apply_bb(vals_before[bb], bb) for bb in bbs}  # cache
         queue = set(bbs)
         while len(queue) > 0:
             bb = queue.pop()
-            vals_before[bb] = self.join(*(vals_after[pred] for pred in bb.predecessors))
+            preds = (
+                bb.predecessors + bb.dummy_predecessors
+                if self.include_unreachable()
+                else bb.predecessors
+            )
+            vals_before[bb] = self.join(*(vals_after[pred] for pred in preds))
             val_after = self.apply_bb(vals_before[bb], bb)
             if not self.eq(val_after, vals_after[bb]):
                 vals_after[bb] = val_after
@@ -75,7 +87,12 @@ class BackwardAnalysis(Generic[T], Analysis[T], ABC):
         queue = set(bbs)
         while len(queue) > 0:
             bb = queue.pop()
-            val_after = self.join(*(vals_before[succ] for succ in bb.successors))
+            succs = (
+                bb.successors + bb.dummy_successors
+                if self.include_unreachable()
+                else bb.successors
+            )
+            val_after = self.join(*(vals_before[succ] for succ in succs))
             val_before = self.apply_bb(val_after, bb)
             if not self.eq(vals_before[bb], val_before):
                 vals_before[bb] = val_before
@@ -97,8 +114,15 @@ class LivenessAnalysis(Generic[VId], BackwardAnalysis[LivenessDomain[VId]]):
 
     stats: dict[BB, VariableStats[VId]]
 
-    def __init__(self, stats: dict[BB, VariableStats[VId]]) -> None:
+    def __init__(
+        self,
+        stats: dict[BB, VariableStats[VId]],
+        initial: LivenessDomain[VId] | None = None,
+        include_unreachable: bool = False,
+    ) -> None:
         self.stats = stats
+        self._initial = initial or {}
+        self._include_unreachable = include_unreachable
 
     def eq(self, live1: LivenessDomain[VId], live2: LivenessDomain[VId]) -> bool:
         # Only check that both contain the same variables. We don't care about the BB
@@ -106,7 +130,10 @@ class LivenessAnalysis(Generic[VId], BackwardAnalysis[LivenessDomain[VId]]):
         return live1.keys() == live2.keys()
 
     def initial(self) -> LivenessDomain[VId]:
-        return {}
+        return self._initial
+
+    def include_unreachable(self) -> bool:
+        return self._include_unreachable
 
     def join(self, *ts: LivenessDomain[VId]) -> LivenessDomain[VId]:
         res: LivenessDomain[VId] = {}
@@ -150,6 +177,7 @@ class AssignmentAnalysis(Generic[VId], ForwardAnalysis[AssignmentDomain[VId]]):
         stats: dict[BB, VariableStats[VId]],
         ass_before_entry: set[VId],
         maybe_ass_before_entry: set[VId],
+        include_unreachable: bool = False,
     ) -> None:
         """Constructs an `AssignmentAnalysis` pass for a CFG.
 
@@ -164,11 +192,15 @@ class AssignmentAnalysis(Generic[VId], ForwardAnalysis[AssignmentDomain[VId]]):
             set.union(*(set(stat.assigned.keys()) for stat in stats.values()))
             | ass_before_entry
         )
+        self._include_unreachable = include_unreachable
 
     def initial(self) -> AssignmentDomain[VId]:
         # Note that definite assignment must start with `all_vars` instead of only
         # `ass_before_entry` since we want to compute the *greatest* fixpoint.
         return self.all_vars, self.maybe_ass_before_entry
+
+    def include_unreachable(self) -> bool:
+        return self._include_unreachable
 
     def join(self, *ts: AssignmentDomain[VId]) -> AssignmentDomain[VId]:
         # We always include the variables that are definitely assigned before the entry,

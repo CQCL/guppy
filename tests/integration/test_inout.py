@@ -298,9 +298,6 @@ def test_move_back_branch(validate):
                 s.q = qubit()
                 return
             i += 1
-        # Guppy is not yet smart enough to detect that this code is unreachable
-        s.q = qubit()
-        return
 
     @guppy(module)
     def main(s: MyStruct @ owned) -> MyStruct:
@@ -374,5 +371,44 @@ def test_self_qubit(validate):
         q0.measure()
         qubit().discard()
         return result
+
+    validate(module.compile())
+
+
+def test_non_terminating(validate):
+    module = GuppyModule("test")
+    module.load_all(quantum)
+
+    @guppy.struct(module)
+    class MyStruct:
+        q1: qubit
+        q2: qubit
+        x: int
+
+    @guppy.declare(module)
+    def foo(q: qubit) -> None: ...
+
+    @guppy.declare(module)
+    def bar(s: MyStruct) -> None: ...
+
+    @guppy(module)
+    def test1(b: bool) -> None:
+        q = qubit()
+        s = MyStruct(qubit(), qubit(), 0)
+        while True:
+            foo(q)
+            bar(s)
+
+    @guppy(module)
+    def test2(q: qubit, s: MyStruct, b: bool) -> None:
+        while True:
+            foo(q)
+            if b:
+                bar(s)
+
+    @guppy(module)
+    def test3(q: qubit, s: MyStruct) -> None:
+        while True:
+            pass
 
     validate(module.compile())

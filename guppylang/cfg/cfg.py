@@ -51,6 +51,16 @@ class BaseCFG(Generic[T]):
             yield bb
             queue += bb.predecessors
 
+    def update_reachable(self) -> None:
+        """Sets the reachability flags on the BBs in this CFG."""
+        queue = {self.entry_bb}
+        while queue:
+            bb = queue.pop()
+            if not bb.reachable:
+                bb.reachable = True
+                for succ in bb.successors:
+                    queue.add(succ)
+
 
 class CFG(BaseCFG[BB]):
     """A control-flow graph of unchecked basic blocks."""
@@ -75,6 +85,15 @@ class CFG(BaseCFG[BB]):
         src_bb.successors.append(tgt_bb)
         tgt_bb.predecessors.append(src_bb)
 
+    def dummy_link(self, src_bb: BB, tgt_bb: BB) -> None:
+        """Adds a dummy control-flow edge between two basic blocks that is provably
+        never taken.
+
+        For example, a `if False: ...` statement emits such a dummy link.
+        """
+        src_bb.dummy_successors.append(tgt_bb)
+        tgt_bb.dummy_predecessors.append(src_bb)
+
     def analyze(
         self,
         def_ass_before: set[str],
@@ -84,8 +103,15 @@ class CFG(BaseCFG[BB]):
         stats = {bb: bb.compute_variable_stats() for bb in self.bbs}
         # Mark all borrowed variables as implicitly used in the exit BB
         stats[self.exit_bb].used |= {x: InoutReturnSentinel(var=x) for x in inout_vars}
-        self.live_before = LivenessAnalysis(stats).run(self.bbs)
+        # This also means borrowed variables are always live, so we can use them as the
+        # initial value in the liveness analysis. This solves the edge case that
+        # borrowed variables should be considered live, even if the exit is actually
+        # unreachable (to avoid linearity violations later).
+        inout_live = {x: self.exit_bb for x in inout_vars}
+        self.live_before = LivenessAnalysis(
+            stats, initial=inout_live, include_unreachable=True
+        ).run(self.bbs)
         self.ass_before, self.maybe_ass_before = AssignmentAnalysis(
-            stats, def_ass_before, maybe_ass_before
+            stats, def_ass_before, maybe_ass_before, include_unreachable=True
         ).run_unpacked(self.bbs)
         return stats

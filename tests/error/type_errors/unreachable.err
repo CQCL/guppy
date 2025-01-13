@@ -1,0 +1,8 @@
+Error: Type mismatch (at $FILE:8:15)
+  | 
+6 |     if False:
+7 |         # This code is unreachable, but we still type-check it
+8 |         return 1.0
+  |                ^^^ Expected return value of type `int`, got `float`
+
+Guppy compilation failed due to 1 previous error

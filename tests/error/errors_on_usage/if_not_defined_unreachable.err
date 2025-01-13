@@ -1,0 +1,8 @@
+Error: Variable not defined (at $FILE:8:11)
+  | 
+6 |     if False:
+7 |         y = 1
+8 |     return y
+  |            ^ `y` is not defined
+
+Guppy compilation failed due to 1 previous error

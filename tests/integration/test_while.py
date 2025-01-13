@@ -6,7 +6,6 @@ def test_infinite_loop(validate):
     def foo() -> int:
         while True:
             pass
-        return 0
 
     validate(foo)
 
@@ -41,7 +40,6 @@ def test_continue(validate):
             if i % 2 == 0:
                 continue
             x = x + i
-        return x
 
     validate(foo)
 

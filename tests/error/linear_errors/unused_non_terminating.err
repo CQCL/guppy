@@ -1,0 +1,10 @@
+Error: Linearity violation (at $FILE:13:8)
+   | 
+11 | 
+12 | @guppy(module)
+13 | def foo(q: qubit @owned) -> None:
+   |         ^^^^^^^^^^^^^^^ Variable `q` with linear type `qubit` is leaked
+
+Help: Make sure that `q` is consumed or returned to avoid the leak
+
+Guppy compilation failed due to 1 previous error
